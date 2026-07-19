@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Webcam from "react-webcam";
 import * as ort from "onnxruntime-web";
-import { AlertTriangle, Clock } from "lucide-react";
 
 interface Question {
   id: number;
@@ -68,6 +67,7 @@ export default function App() {
   const [modelLoading, setModelLoading] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [modelReady, setModelReady] = useState(false);
+  const [questions, setQuestions] = useState<Question[]>(MOCK_QUESTIONS);
 
   const webcamRef = useRef<Webcam>(null);
   const ortSessionRef = useRef<ort.InferenceSession | null>(null);
@@ -269,17 +269,18 @@ export default function App() {
     // A. Validate Face Visibility with Debouncing
     if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
       consecutiveMissingRef.current += 1;
-      if (consecutiveMissingRef.current >= 3) { // 3 consecutive seconds
-        console.warn("[PROCTOR] Face not visible for 3 seconds!");
+      if (consecutiveMissingRef.current >= 4) { // 4 consecutive frames (~1.4s at 350ms)
+        console.warn("[PROCTOR] Face not visible — blocking camera or looking away!");
         ws.send(
           JSON.stringify({
             type: "anomaly",
-            anomaly_type: "Interface Violation (Face Missing)",
+            anomaly_type: "Camera Obstruction (Face Not Visible)",
             confidence: 1.0,
             frame: webcamRef.current?.getScreenshot() || null
           })
         );
-        setWarnings((prev) => ["Security Warning: Face missing from webcam frame!", ...prev.slice(0, 4)]);
+        setWarnings((prev) => ["Face not visible to camera. Please look directly at the screen.", ...prev.slice(0, 4)]);
+        consecutiveMissingRef.current = 0; // Reset so it fires again after another 4 frames
       }
       return;
     } else {
@@ -308,12 +309,13 @@ export default function App() {
     let headViolation = false;
     let headLabel = "";
 
-    // Debounce yaw movements (left/right)
+    // Debounce yaw movements (left/right) — 4 frames at 350ms ≈ 1.4s persistent look-away
     if (horizontalRatio < 0.55 || horizontalRatio > 1.8) {
       consecutiveCheekRef.current += 1;
-      if (consecutiveCheekRef.current >= 3) {
+      if (consecutiveCheekRef.current >= 4) {
         headViolation = true;
-        headLabel = "Suspicious Head Movement (Yaw Deviation)";
+        headLabel = "Head turned sideways (Yaw Deviation)";
+        consecutiveCheekRef.current = 0;
       }
     } else {
       consecutiveCheekRef.current = 0;
@@ -322,9 +324,10 @@ export default function App() {
     // Debounce pitch movements (up/down)
     if (verticalRatio < 0.55 || verticalRatio > 1.7) {
       consecutivePitchRef.current += 1;
-      if (consecutivePitchRef.current >= 3) {
+      if (consecutivePitchRef.current >= 4) {
         headViolation = true;
-        headLabel = "Suspicious Head Movement (Pitch Deviation)";
+        headLabel = "Head tilted up or down (Pitch Deviation)";
+        consecutivePitchRef.current = 0;
       }
     } else {
       consecutivePitchRef.current = 0;
@@ -347,8 +350,9 @@ export default function App() {
     let gazeViolation = false;
     if (leftGazeIndex < 0.25 || leftGazeIndex > 0.75 || rightGazeIndex < 0.25 || rightGazeIndex > 0.75) {
       consecutiveGazeRef.current += 1;
-      if (consecutiveGazeRef.current >= 3) {
+      if (consecutiveGazeRef.current >= 4) {
         gazeViolation = true;
+        consecutiveGazeRef.current = 0;
       }
     } else {
       consecutiveGazeRef.current = 0;
@@ -486,6 +490,19 @@ export default function App() {
     if (!studentId.trim()) return;
 
     try {
+      // Fetch dynamic questions from backend (fall back to MOCK_QUESTIONS if unavailable)
+      try {
+        const qRes = await fetch("http://localhost:8000/questions");
+        if (qRes.ok) {
+          const qData = await qRes.json();
+          if (Array.isArray(qData) && qData.length > 0) {
+            setQuestions(qData);
+          }
+        }
+      } catch {
+        // Backend unavailable — keep MOCK_QUESTIONS
+      }
+
       const response = await fetch("http://localhost:8000/session/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -629,16 +646,33 @@ export default function App() {
     }
   }, [ws]);
 
-  // Main 1-second capture loop
+  // Main 350ms capture loop — faster response to head/gaze violations
   useEffect(() => {
     if (!sessionStarted || !ws) return;
     const timer = setInterval(() => {
       captureAndEvaluate();
+    }, 350);
+    // Audio analysis at separate 1s cadence (FFT doesn't benefit from sub-second sampling)
+    const audioTimer = setInterval(() => {
       analyzeAudio();
     }, 1000);
 
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); clearInterval(audioTimer); };
   }, [sessionStarted, ws, captureAndEvaluate, analyzeAudio]);
+
+  // Heartbeat loop — send live camera frame to admin dashboard every 5s
+  useEffect(() => {
+    if (!sessionStarted || !ws) return;
+    const heartbeat = setInterval(() => {
+      if (webcamRef.current && ws.readyState === WebSocket.OPEN) {
+        const frame = webcamRef.current.getScreenshot();
+        if (frame) {
+          ws.send(JSON.stringify({ type: "heartbeat", frame }));
+        }
+      }
+    }, 5000);
+    return () => clearInterval(heartbeat);
+  }, [sessionStarted, ws]);
 
   // Countdown timer
   useEffect(() => {
@@ -866,29 +900,30 @@ export default function App() {
     );
   }
 
-  const currentQuestion = MOCK_QUESTIONS[currentQuestionIdx];
+  const currentQuestion = questions[currentQuestionIdx];
 
   return (
-    <div className="min-h-screen bg-[#F6F3EC] flex flex-col justify-between font-sans text-[#1C2430]">
-      {/* Top Banner Warnings Overlay */}
+    <div className="min-h-screen bg-[var(--paper)] flex flex-col justify-between font-sans text-[var(--ink)]">
+      {/* Top Banner Warnings Overlay — clean active voice */}
       {warnings.length > 0 && (
-        <div className="fixed top-20 right-6 z-50 w-full max-w-sm space-y-3 print-hidden">
+        <div className="fixed top-20 right-6 z-50 w-full max-w-sm space-y-3 print-hidden animate-slide-in">
           {warnings.map((warn, index) => (
             <div
               key={index}
-              className="bg-white border border-[#1C2430]/10 rounded p-4 flex gap-3 shadow-md relative overflow-hidden animate-slide-in"
+              className="bg-white border border-[var(--line)] rounded-lg p-4 flex gap-3 shadow-md relative overflow-hidden"
             >
-              <div className="absolute top-0 left-0 w-1.5 h-full bg-[#8C2F39]"></div>
-              <AlertTriangle className="w-4 h-4 text-[#8C2F39] shrink-0 mt-0.5" />
+              <div className="absolute top-0 left-0 w-1 h-full bg-[var(--seal)]"></div>
               <div className="flex-1 space-y-1">
-                <h4 className="text-[10px] font-bold text-[#8C2F39] uppercase tracking-wider">
-                  System Notification
+                <h4 className="font-mono text-[10px] font-bold text-[var(--seal)] uppercase tracking-wider">
+                  System alert
                 </h4>
-                <p className="text-xs text-slate-700 leading-normal">{warn}</p>
+                <p className="text-xs text-[var(--ink)] leading-normal">
+                  {warn.replace(/Security Warning:\s*/i, "").replace(/!+$/, "")}
+                </p>
               </div>
               <button
                 onClick={() => dismissWarning(index)}
-                className="text-[9px] font-bold text-slate-400 hover:text-slate-600 self-start uppercase px-1.5 py-0.5 rounded border border-slate-200"
+                className="font-mono text-[9.5px] font-bold text-[var(--ink-soft)] hover:text-[var(--ink)] self-start uppercase px-2 py-0.5 rounded border border-[var(--line)]"
               >
                 Dismiss
               </button>
@@ -897,170 +932,155 @@ export default function App() {
         </div>
       )}
 
-      {/* Header */}
-      <header className="px-6 py-4 border-b border-[#1C2430]/10 bg-white sticky top-0 z-40 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 22, height: 22, flexShrink: 0 }}>
+      {/* HEADER — matching student-exam.html */}
+      <header>
+        <div className="brand">
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M20 2 L23.5 6.5 L29 5 L29.5 10.7 L35 12.5 L32 17.5 L35 22.5 L29.5 24.3 L29 30 L23.5 28.5 L20 33 L16.5 28.5 L11 30 L10.5 24.3 L5 22.5 L8 17.5 L5 12.5 L10.5 10.7 L11 5 L16.5 6.5 Z"
               stroke="#1E3A5F" strokeWidth="1.4" fill="#F6F3EC"/>
             <text x="20" y="21.5" textAnchor="middle" fontFamily="Newsreader, serif" fontSize="10" fontWeight="600" fill="#1E3A5F">EG</text>
           </svg>
-          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px', letterSpacing: '0.14em', color: '#5B6472', fontWeight: 500 }}>
-            EXAMGUARD SECURE PORTAL
-          </span>
+          <span className="brand-word">EXAMGUARD SECURE PORTAL</span>
         </div>
-
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 bg-[#F6F3EC] border border-[#1C2430]/10 px-3.5 py-1.5 rounded text-xs font-mono font-bold text-[#1E3A5F] tracking-wider">
-            <Clock className="w-3.5 h-3.5 text-[#1E3A5F]" />
-            <span>{formatTime(timeLeft)}</span>
+        <div className="header-right">
+          <div className="timer">
+            <span>⏱</span> {formatTime(timeLeft)}
           </div>
-
-          <span className="text-[10px] font-bold font-mono text-slate-550">
-            Student: {studentId}
-          </span>
+          <div className="student-tag">Student: {studentId}</div>
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Left/Center: MCQ Questions Panel */}
-        <section className="lg:col-span-2 space-y-6">
-          <div className="bg-white border border-[#1C2430]/10 rounded-lg p-6 space-y-6 shadow-sm">
-            {/* Index Tracker */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest">
-                Question {currentQuestionIdx + 1} of {MOCK_QUESTIONS.length}
-              </span>
-              <span className="text-[10px] font-mono font-bold text-slate-400">
-                General Knowledge Section
-              </span>
+      {/* MAIN LAYOUT — matching student-exam.html */}
+      <main>
+        {/* QUESTION CARD */}
+        <div>
+          <div className="card">
+            <div className="q-meta">
+              <span>Question {currentQuestionIdx + 1} of {questions.length}</span>
+              <span>General Knowledge Section</span>
             </div>
+            <p className="q-text">{currentQuestion.text}</p>
 
-            {/* Question Text */}
-            <h3 className="text-lg font-serif font-bold text-[#1C2430] leading-relaxed">
-              {currentQuestion.text}
-            </h3>
-
-            {/* Options */}
-            <div className="space-y-3">
+            <div>
               {currentQuestion.options.map((opt, idx) => {
                 const isSelected = answers[currentQuestion.id] === idx;
                 return (
-                  <button
+                  <div
                     key={idx}
                     onClick={() => handleSelectOption(currentQuestion.id, idx)}
-                    className={`w-full text-left px-5 py-4 rounded border text-xs font-medium transition-all flex items-center justify-between ${
-                      isSelected
-                        ? "bg-[#1E3A5F]/5 border-[#1E3A5F] text-[#1E3A5F]"
-                        : "bg-white border-[#1C2430]/10 hover:bg-[#F6F3EC]/50 text-slate-700"
-                    }`}
+                    className={`option ${isSelected ? "selected" : ""}`}
                   >
-                    <span>{opt}</span>
-                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
-                      isSelected ? "border-[#1E3A5F]" : "border-[#1C2430]/20"
-                    }`}>
-                      {isSelected && <span className="w-1.5 h-1.5 bg-[#1E3A5F] rounded-full" />}
-                    </span>
-                  </button>
+                    <span className="dot"></span>
+                    {opt}
+                  </div>
                 );
               })}
             </div>
           </div>
 
-          {/* Navigation Controls */}
-          <div className="flex items-center justify-between">
+          <div className="nav-row">
             <button
               onClick={() => setCurrentQuestionIdx((prev) => Math.max(0, prev - 1))}
               disabled={currentQuestionIdx === 0}
-              className="px-5 py-2 rounded border border-[#1C2430]/15 text-xs font-semibold text-slate-600 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent transition-all focus-oxford"
+              className="btn btn-ghost"
             >
               Previous
             </button>
 
-            {currentQuestionIdx < MOCK_QUESTIONS.length - 1 ? (
+            {currentQuestionIdx < questions.length - 1 ? (
               <button
                 onClick={() => setCurrentQuestionIdx((prev) => prev + 1)}
-                className="bg-[#1E3A5F] hover:bg-[#1E3A5F]/90 text-white px-6 py-2 rounded text-xs font-semibold transition-all focus-oxford"
+                className="btn btn-primary-exam"
               >
-                Next Question
+                Next question
               </button>
             ) : (
               <button
                 onClick={submitExam}
-                className="bg-[#4B7A6B] hover:bg-[#4B7A6B]/90 text-white px-7 py-2 rounded text-xs font-semibold transition-all focus-oxford"
+                className="btn btn-submit-exam"
               >
-                Submit Exam
+                Submit exam
               </button>
             )}
           </div>
-        </section>
+        </div>
 
-        {/* Right Panel: Active Camera Proctor Feed */}
-        <section className="lg:col-span-1 space-y-6">
-          {/* Webcam Preview Widget */}
-          <div className="bg-white border border-[#1C2430]/10 rounded-lg p-5 space-y-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h4 className="text-xs font-bold text-[#1C2430]/80 uppercase tracking-wider flex items-center gap-1.5">
-                Webcam Feed
-              </h4>
-              <div className="flex items-center gap-1.5 text-[9px] font-mono text-[#8C2F39] font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#8C2F39]"></span>
-                RECORDING
-              </div>
-            </div>
+        {/* SIDE COLUMN — matching student-exam.html */}
+        <div className="side-stack">
+          {/* Hidden Webcam — needed for MediaPipe and ONNX processing but not shown to student */}
+          <div style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
+            <Webcam
+              audio={false}
+              ref={webcamRef}
+              screenshotFormat="image/jpeg"
+              videoConstraints={{
+                width: 320,
+                height: 240,
+                facingMode: "user"
+              }}
+            />
+          </div>
 
-            {/* Webcam video window - passport framed style */}
-            <div className="bg-slate-100 rounded border border-[#1C2430]/10 overflow-hidden aspect-[4/3] max-w-[200px] mx-auto relative flex items-center justify-center">
-              <Webcam
-                audio={false}
-                ref={webcamRef}
-                screenshotFormat="image/jpeg"
-                videoConstraints={{
-                  width: 320,
-                  height: 240,
-                  facingMode: "user"
-                }}
-                className="w-full h-full object-cover transform scale-x-[-1]"
-              />
+          <div className="card">
+            <div className="panel-title">
+              <span>Camera status</span>
+              <span className="rec-dot">Active</span>
             </div>
-            
-            <p className="text-[10px] text-slate-500 leading-relaxed font-sans bg-[#F6F3EC]/50 p-3 rounded border border-[#1C2430]/5">
-              This exam is verified on the local client ledger. AI evaluations (yaw/pitch angles, speech spectrogram ratio) are executed in real time in-browser.
+            <div style={{
+              background: 'var(--paper)',
+              border: '1px solid var(--line)',
+              borderRadius: 6,
+              padding: '20px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 10,
+              textAlign: 'center'
+            }}>
+              <svg viewBox="0 0 48 48" width="40" height="40" fill="none">
+                <circle cx="24" cy="24" r="22" stroke="var(--oxford)" strokeWidth="1.5" />
+                <path d="M14 22 Q24 10 34 22 Q24 34 14 22Z" stroke="var(--oxford)" strokeWidth="1.5" fill="none" />
+                <circle cx="24" cy="22" r="5" fill="var(--oxford)" />
+                <circle cx="13" cy="13" r="3" fill="var(--seal)" />
+              </svg>
+              <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-soft)', margin: 0 }}>
+                Proctoring active<br/>
+                <span style={{ color: 'var(--verdigris)', fontWeight: 600 }}>● Camera connected</span>
+              </p>
+            </div>
+            <p className="webcam-note">
+              On-device analysis only. Face position and attention are verified locally. No video is transmitted.
             </p>
           </div>
 
-          {/* Quick Stats Panel */}
-          <div className="bg-white border border-[#1C2430]/10 rounded-lg p-5 space-y-3 font-mono text-[10px] text-slate-500 leading-loose shadow-sm">
-            <h5 className="font-sans font-bold text-xs text-[#1C2430]/80 uppercase tracking-wider mb-1">
-              Ledger Metrics
-            </h5>
-            <div className="flex justify-between border-b border-slate-100 pb-1.5">
-              <span>Status:</span>
-              <span className="text-[#4B7A6B] font-bold font-sans">INVIGILATION_ACTIVE</span>
+          <div className="card">
+            <div className="panel-title">
+              <span>Ledger metrics</span>
             </div>
-            <div className="flex justify-between border-b border-slate-100 pb-1.5">
-              <span>Acoustic Engine:</span>
-              <span>FFT Filter</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 pb-1.5">
-              <span>Vision Engine:</span>
-              <span>ONNX + FaceMesh</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Evidence Highlight:</span>
-              <span>Rolling WebM</span>
+            <div className="ledger-rows">
+              <div className="row">
+                <span>Status</span>
+                <span className="val status-active">Invigilation active</span>
+              </div>
+              <div className="row">
+                <span>Acoustic engine</span>
+                <span className="val">FFT filter</span>
+              </div>
+              <div className="row">
+                <span>Vision engine</span>
+                <span className="val">ONNX + FaceMesh</span>
+              </div>
+              <div className="row">
+                <span>Evidence highlight</span>
+                <span className="val">Rolling WebM</span>
+              </div>
             </div>
           </div>
-        </section>
+        </div>
       </main>
 
-      {/* Footer */}
-      <footer className="py-4 text-center border-t border-[#1C2430]/10 bg-white">
-        <p className="text-[9px] text-[#1C2430]/40 font-mono uppercase tracking-widest">
-          ExamGuard AI • Ledgers of Academic Integrity
-        </p>
-      </footer>
+      {/* FOOTER */}
+      <footer>ExamGuard AI · Ledgers of Academic Integrity</footer>
     </div>
   );
 }
