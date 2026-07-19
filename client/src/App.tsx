@@ -69,6 +69,15 @@ export default function App() {
   const [modelReady, setModelReady] = useState(false);
   const [questions, setQuestions] = useState<Question[]>(MOCK_QUESTIONS);
   const [showFeed, setShowFeed] = useState(false);
+  const [proctorDebug, setProctorDebug] = useState({
+    faces: 0,
+    yaw: 1.0,
+    pitch: 1.0,
+    gazeL: 0.5,
+    gazeR: 0.5,
+    rms: 0.0,
+    wsState: "CLOSED"
+  });
 
   const webcamRef = useRef<Webcam>(null);
   const ortSessionRef = useRef<ort.InferenceSession | null>(null);
@@ -92,6 +101,7 @@ export default function App() {
   const consecutiveGazeRef = useRef(0);
   const consecutiveMissingRef = useRef(0);
   const consecutiveSpeechRef = useRef(0);
+  const consecutiveMultipleRef = useRef(0);
 
   // Frame differencing tracking states in refs
   const prevFrameGrayRef = useRef<Uint8Array | null>(null);
@@ -283,6 +293,12 @@ export default function App() {
 
     // A. Validate Face Visibility with Debouncing
     if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+      setProctorDebug((prev) => ({
+        ...prev,
+        faces: 0,
+        wsState: socket.readyState === 1 ? "OPEN" : socket.readyState === 0 ? "CONNECTING" : "CLOSED"
+      }));
+
       consecutiveMissingRef.current += 1;
       if (consecutiveMissingRef.current >= 3) { // 3 consecutive frames (~1s)
         console.warn("[PROCTOR] Face not visible — student left seat or camera blocked!");
@@ -304,18 +320,49 @@ export default function App() {
     }
 
     // B. Check for Multiple Persons (Class 3)
-    if (results.multiFaceLandmarks.length > 1) {
-      const screenshot = webcamRef.current?.getScreenshot() || null;
-      socket.send(
-        JSON.stringify({
-          type: "anomaly",
-          anomaly_type: "Multiple Persons Detected",
-          confidence: 0.95,
-          frame: screenshot
-        })
-      );
-      setWarnings((prev) => ["Security Alert: Multiple persons detected in camera frame!", ...prev.slice(0, 4)]);
+    let distinctFacesCount = 0;
+    if (results.multiFaceLandmarks) {
+      const distinctFaces: any[] = [];
+      for (const face of results.multiFaceLandmarks) {
+        const nose = face[4];
+        if (!nose) continue;
+        let isDuplicate = false;
+        for (const existing of distinctFaces) {
+          const dx = nose.x - existing.x;
+          const dy = nose.y - existing.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          // If the detected face is within 15% distance, it's the same face
+          if (dist < 0.15) {
+            isDuplicate = true;
+            break;
+          }
+        }
+        if (!isDuplicate) {
+          distinctFaces.push(nose);
+        }
+      }
+      distinctFacesCount = distinctFaces.length;
+    }
+
+    if (distinctFacesCount > 1) {
+      consecutiveMultipleRef.current += 1;
+      if (consecutiveMultipleRef.current >= 2) { // Require 2 consecutive frames (~700ms)
+        console.warn("[PROCTOR] Multiple distinct faces detected in frame!");
+        const screenshot = webcamRef.current?.getScreenshot() || null;
+        socket.send(
+          JSON.stringify({
+            type: "anomaly",
+            anomaly_type: "Multiple Persons Detected",
+            confidence: 0.95,
+            frame: screenshot
+          })
+        );
+        setWarnings((prev) => ["Security Alert: Multiple persons detected in camera frame!", ...prev.slice(0, 4)]);
+        consecutiveMultipleRef.current = 0; // Reset
+      }
       return;
+    } else {
+      consecutiveMultipleRef.current = 0;
     }
 
     const landmarks = results.multiFaceLandmarks[0];
@@ -453,6 +500,17 @@ export default function App() {
         console.error("[ort] CNN evaluate failed:", ortErr);
       }
     }
+
+    // Update proctorDebug metrics
+    setProctorDebug((prev) => ({
+      ...prev,
+      faces: distinctFacesCount,
+      yaw: parseFloat(horizontalRatio.toFixed(2)),
+      pitch: parseFloat(verticalRatio.toFixed(2)),
+      gazeL: parseFloat(leftGazeIndex.toFixed(2)),
+      gazeR: parseFloat(rightGazeIndex.toFixed(2)),
+      wsState: socket.readyState === 1 ? "OPEN" : socket.readyState === 0 ? "CONNECTING" : "CLOSED"
+    }));
 
     // F. Resolve Trigger Priority
     let alertType = "";
@@ -647,6 +705,11 @@ export default function App() {
     } else {
       consecutiveSpeechRef.current = 0;
     }
+
+    setProctorDebug((prev) => ({
+      ...prev,
+      rms: parseFloat(rms.toFixed(4))
+    }));
   }, []);
 
   // Main 350ms capture loop — faster response to head/gaze violations
@@ -1067,11 +1130,49 @@ export default function App() {
           {/* Ledger metrics */}
           <div className="card">
             <div className="panel-title"><span>Ledger metrics</span></div>
-            <div className="ledger-rows">
+            <div className="ledger-rows" style={{ marginBottom: 12 }}>
               <div className="row"><span>Status</span><span className="val status-active">Active</span></div>
+              <div className="row"><span>Websocket</span><span className="val" style={{ color: proctorDebug.wsState === 'OPEN' ? 'var(--verdigris)' : 'var(--seal)' }}>{proctorDebug.wsState}</span></div>
               <div className="row"><span>Audio</span><span className="val">FFT filter</span></div>
               <div className="row"><span>Vision</span><span className="val">ONNX + FaceMesh</span></div>
-              <div className="row"><span>Evidence</span><span className="val">Rolling WebM</span></div>
+            </div>
+
+            {/* Live telemetry diagnostic info */}
+            <div style={{
+              borderTop: '1px solid var(--line)',
+              paddingTop: 12,
+              marginTop: 12,
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: '9.5px',
+              color: 'var(--ink-soft)'
+            }}>
+              <div style={{ textTransform: 'uppercase', fontSize: 8, letterSpacing: '0.08em', color: 'var(--gold)', fontWeight: 600, marginBottom: 8 }}>
+                Live Proctoring Telemetry
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Faces Tracked</span>
+                  <strong style={{ color: proctorDebug.faces === 1 ? 'var(--ink)' : 'var(--seal)' }}>{proctorDebug.faces}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Head Yaw Ratio</span>
+                  <span style={{ color: (proctorDebug.yaw < 0.68 || proctorDebug.yaw > 1.45) ? 'var(--seal)' : 'var(--ink)' }}>{proctorDebug.yaw}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Head Pitch Ratio</span>
+                  <span style={{ color: (proctorDebug.pitch < 0.75 || proctorDebug.pitch > 1.35) ? 'var(--seal)' : 'var(--ink)' }}>{proctorDebug.pitch}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Gaze L / R</span>
+                  <span style={{ color: (proctorDebug.gazeL < 0.32 || proctorDebug.gazeL > 0.68) ? 'var(--seal)' : 'var(--ink)' }}>
+                    {proctorDebug.gazeL} / {proctorDebug.gazeR}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Mic RMS Level</span>
+                  <span style={{ color: proctorDebug.rms > 0.015 ? 'var(--seal)' : 'var(--ink)' }}>{proctorDebug.rms}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
