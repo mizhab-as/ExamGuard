@@ -316,7 +316,7 @@ export default function App() {
       }
       return;
     } else {
-      consecutiveMissingRef.current = 0;
+      consecutiveMissingRef.current = Math.max(0, consecutiveMissingRef.current - 1);
     }
 
     // B. Check for Multiple Persons (Class 3)
@@ -362,7 +362,7 @@ export default function App() {
       }
       return;
     } else {
-      consecutiveMultipleRef.current = 0;
+      consecutiveMultipleRef.current = Math.max(0, consecutiveMultipleRef.current - 1);
     }
 
     const landmarks = results.multiFaceLandmarks[0];
@@ -397,7 +397,7 @@ export default function App() {
         consecutiveCheekRef.current = 0;
       }
     } else {
-      consecutiveCheekRef.current = 0;
+      consecutiveCheekRef.current = Math.max(0, consecutiveCheekRef.current - 1);
     }
 
     // Debounce pitch movements (up/down)
@@ -415,7 +415,7 @@ export default function App() {
         consecutivePitchRef.current = 0;
       }
     } else {
-      consecutivePitchRef.current = 0;
+      consecutivePitchRef.current = Math.max(0, consecutivePitchRef.current - 1);
     }
 
     // D. Eye Gaze Iris Drift Tracking (Looking Off-Screen)
@@ -440,7 +440,7 @@ export default function App() {
         consecutiveGazeRef.current = 0;
       }
     } else {
-      consecutiveGazeRef.current = 0;
+      consecutiveGazeRef.current = Math.max(0, consecutiveGazeRef.current - 1);
     }
 
     // E. Visual CNN Classification (Device / Person detections)
@@ -492,9 +492,32 @@ export default function App() {
         }
 
         if (classId > 0) {
-          cnnViolation = true;
-          cnnLabel = CLASS_LABELS[classId];
-          cnnConfidence = maxVal;
+          // Sensor Fusion Validation: Cross-check the CNN's output against actual hardware sensors
+          // (FaceMesh geometry, Audio amplitude) to prevent false positives from random weights.
+          let isVerified = true;
+
+          if (classId === 3 && distinctFacesCount <= 1) {
+            // CNN thinks there are multiple people, but FaceMesh only tracks 1 face (or 0)
+            isVerified = false;
+          }
+          if (classId === 2 && !headViolation) {
+            // CNN thinks head is moving, but FaceMesh ratios are normal
+            isVerified = false;
+          }
+          if (classId === 4 && consecutiveSpeechRef.current === 0) {
+            // CNN thinks student is talking, but mic RMS / speech energy ratio is normal
+            isVerified = false;
+          }
+          if (classId === 1 && verticalRatio <= 1.32 && leftGazeIndex >= 0.32 && rightGazeIndex >= 0.32) {
+            // CNN thinks device is used, but student is looking straight at the screen
+            isVerified = false;
+          }
+
+          if (isVerified) {
+            cnnViolation = true;
+            cnnLabel = CLASS_LABELS[classId];
+            cnnConfidence = maxVal;
+          }
         }
       } catch (ortErr) {
         console.error("[ort] CNN evaluate failed:", ortErr);
@@ -528,17 +551,15 @@ export default function App() {
     }
 
     if (alertType && webcamRef.current) {
-      const screenshot = webcamRef.current.getScreenshot();
-      if (screenshot) {
-        socket.send(
-          JSON.stringify({
-            type: "anomaly",
-            anomaly_type: alertType,
-            confidence: confidence,
-            frame: screenshot
-          })
-        );
-      }
+      const screenshot = webcamRef.current.getScreenshot() || null;
+      socket.send(
+        JSON.stringify({
+          type: "anomaly",
+          anomaly_type: alertType,
+          confidence: confidence,
+          frame: screenshot
+        })
+      );
     }
   }, []);
 
