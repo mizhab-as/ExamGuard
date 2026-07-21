@@ -15,13 +15,17 @@ from app.core.inference import ExamGuardInferenceEngine
 from app.database.models import init_db, SessionLocal, ExamSession, SessionAlert, QuestionModel, AuthorizedStudent, ExamModel
 
 # Initialize directories for image persistence
-DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
+DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data"))
 FRAMES_DIR = os.path.join(DATA_DIR, "frames")
 THUMBNAILS_DIR = os.path.join(DATA_DIR, "thumbnails")
 CLIPS_DIR = os.path.join(DATA_DIR, "clips")
-os.makedirs(FRAMES_DIR, exist_ok=True)
-os.makedirs(THUMBNAILS_DIR, exist_ok=True)
-os.makedirs(CLIPS_DIR, exist_ok=True)
+
+try:
+    os.makedirs(FRAMES_DIR, exist_ok=True)
+    os.makedirs(THUMBNAILS_DIR, exist_ok=True)
+    os.makedirs(CLIPS_DIR, exist_ok=True)
+except Exception as e:
+    print(f"[SYSTEM] Warning: Failed to create persistent folders ({e}). Operating in transient mode.")
 
 app = FastAPI(title="ExamGuard - Online Proctoring Engine")
 
@@ -34,13 +38,83 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def seed_data(db: Session):
+    try:
+        # 1. Seed 5 default students
+        default_students = [
+            {"student_id": "S001", "student_name": "Alice Vance", "passcode": "pass123", "class_group": "CS-2026-A"},
+            {"student_id": "S002", "student_name": "Bob Vance", "passcode": "pass123", "class_group": "CS-2026-A"},
+            {"student_id": "S003", "student_name": "Charlie Vance", "passcode": "pass123", "class_group": "CS-2026-A"},
+            {"student_id": "S004", "student_name": "David Vance", "passcode": "pass123", "class_group": "CS-2026-A"},
+            {"student_id": "S005", "student_name": "Emma Vance", "passcode": "pass123", "class_group": "CS-2026-A"}
+        ]
+        for s in default_students:
+            existing = db.query(AuthorizedStudent).filter(AuthorizedStudent.student_id == s["student_id"]).first()
+            if not existing:
+                student = AuthorizedStudent(
+                    student_id=s["student_id"],
+                    student_name=s["student_name"],
+                    passcode=s["passcode"],
+                    class_group=s["class_group"]
+                )
+                db.add(student)
+        db.commit()
+
+        # 2. Seed default exam E01
+        existing_exam = db.query(ExamModel).filter(ExamModel.id == "default").first()
+        if not existing_exam:
+            exam = ExamModel(
+                id="default",
+                title="Default Exam (E01)",
+                description="Introduction to Algorithms & Data Structures",
+                active=True
+            )
+            db.add(exam)
+            db.commit()
+
+        # 3. Seed default questions for E01
+        existing_questions = db.query(QuestionModel).filter(QuestionModel.exam_id == "default").all()
+        if not existing_questions:
+            default_questions = [
+                {
+                    "text": "What is the time complexity of binary search in the worst case?",
+                    "options": ["O(1)", "O(n)", "O(log n)", "O(n log n)"],
+                    "correct_option_idx": 2
+                },
+                {
+                    "text": "Which data structure operates on a Last-In, First-Out (LIFO) basis?",
+                    "options": ["Queue", "Stack", "Linked List", "Binary Tree"],
+                    "correct_option_idx": 1
+                },
+                {
+                    "text": "What does HTML stand for?",
+                    "options": ["Hyper Text Markup Language", "Hyperlink Text Management Language", "Home Tool Markup Language", "Hyper Transfer Makeup Language"],
+                    "correct_option_idx": 0
+                }
+            ]
+            for q in default_questions:
+                question = QuestionModel(
+                    text=q["text"],
+                    options_json=json.dumps(q["options"]),
+                    correct_option_idx=q["correct_option_idx"],
+                    exam_id="default"
+                )
+                db.add(question)
+            db.commit()
+        print("[STARTUP] Database seeding completed successfully.")
+    except Exception as e:
+        print(f"[STARTUP] Error seeding database: {e}")
+
 # Initialize database schemas
 @app.on_event("startup")
 def startup_event():
     init_db()
-    # Mark any stale active sessions from previous runs as completed
     db = SessionLocal()
     try:
+        # Seed default data on startup
+        seed_data(db)
+        
+        # Mark any stale active sessions from previous runs as completed
         stale_sessions = db.query(ExamSession).filter(ExamSession.status == "active").all()
         for s in stale_sessions:
             s.status = "completed"
