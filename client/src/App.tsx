@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Webcam from "react-webcam";
 import * as ort from "onnxruntime-web";
+import InvigilatorDashboard from "./InvigilatorDashboard";
+
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const WS_BASE = (import.meta.env.VITE_WS_URL || API_BASE.replace(/^http/, "ws")).replace(/\/$/, "");
 
 interface Question {
   id: number;
@@ -55,6 +59,7 @@ const CLASS_LABELS: Record<number, string> = {
 };
 
 export default function App() {
+  const [portalView, setPortalView] = useState<"portal" | "student" | "invigilator">("portal");
   const [studentId, setStudentId] = useState("");
   const [passcode, setPasscode] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -137,7 +142,7 @@ export default function App() {
   useEffect(() => {
     const fetchExams = async () => {
       try {
-        const res = await fetch("http://localhost:8000/exams?student_view=true");
+        const res = await fetch(`${API_BASE}/exams?student_view=true`);
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
@@ -288,7 +293,7 @@ export default function App() {
 
     try {
       console.log(`[RECORDER] Uploading evidence clip for alert ${alertId} (Session: ${targetSessionId})...`);
-      const response = await fetch(`http://localhost:8000/session/${targetSessionId}/alert/${alertId}/video`, {
+      const response = await fetch(`${API_BASE}/session/${targetSessionId}/alert/${alertId}/video`, {
         method: "POST",
         body: formData
       });
@@ -613,7 +618,7 @@ export default function App() {
     setAuthenticating(true);
 
     try {
-      const res = await fetch("http://localhost:8000/students/verify", {
+      const res = await fetch(`${API_BASE}/students/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -633,7 +638,7 @@ export default function App() {
 
       // Fetch active exams list
       try {
-        const examsRes = await fetch("http://localhost:8000/exams?student_view=true");
+        const examsRes = await fetch(`${API_BASE}/exams?student_view=true`);
         if (examsRes.ok) {
           const eData = await examsRes.json();
           if (Array.isArray(eData) && eData.length > 0) {
@@ -670,7 +675,7 @@ export default function App() {
     try {
       // Fetch dynamic questions from backend (fall back to MOCK_QUESTIONS if unavailable)
       try {
-        const qRes = await fetch(`http://localhost:8000/questions?exam_id=${encodeURIComponent(selectedExamId)}&student_view=true`);
+        const qRes = await fetch(`${API_BASE}/questions?exam_id=${encodeURIComponent(selectedExamId)}&student_view=true`);
         if (qRes.ok) {
           const qData = await qRes.json();
           if (Array.isArray(qData) && qData.length > 0) {
@@ -681,7 +686,7 @@ export default function App() {
         // Backend unavailable — keep MOCK_QUESTIONS
       }
 
-      const response = await fetch("http://localhost:8000/session/start", {
+      const response = await fetch(`${API_BASE}/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -710,7 +715,7 @@ export default function App() {
       }, 1000);
 
       // Create WebSocket connection
-      const socket = new WebSocket(`ws://localhost:8000/session/${data.session_id}/stream`);
+      const socket = new WebSocket(`${WS_BASE}/session/${data.session_id}/stream`);
       
       socket.onopen = () => {
         console.log("[STUDENT CLIENT] Stream WS connected.");
@@ -742,7 +747,7 @@ export default function App() {
     const targetSessionId = sessionId || sessionIdRef.current;
     if (targetSessionId) {
       try {
-        const res = await fetch(`http://localhost:8000/session/${targetSessionId}/submit`, {
+        const res = await fetch(`${API_BASE}/session/${targetSessionId}/submit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ answers })
@@ -1004,6 +1009,198 @@ export default function App() {
     );
   }
 
+  if (portalView === "invigilator") {
+    return <InvigilatorDashboard onBackToPortal={() => setPortalView("portal")} />;
+  }
+
+  if (!sessionStarted && portalView === "portal") {
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        background: "radial-gradient(circle at center, #1b263b 0%, #0d131f 100%)",
+        color: "#f8f9fa",
+        fontFamily: "'Inter', sans-serif",
+        padding: "40px 20px",
+        textAlign: "center"
+      }}>
+        {/* Animated Wax Seal Logo Mark */}
+        <div style={{
+          marginBottom: "24px",
+          position: "relative",
+          animation: "pulse 3s infinite ease-in-out"
+        }}>
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 80, height: 80 }}>
+            <path d="M20 2 L23.5 6.5 L29 5 L29.5 10.7 L35 12.5 L32 17.5 L35 22.5 L29.5 24.3 L29 30 L23.5 28.5 L20 33 L16.5 28.5 L11 30 L10.5 24.3 L5 22.5 L8 17.5 L5 12.5 L10.5 10.7 L11 5 L16.5 6.5 Z"
+              stroke="#D9B65B" strokeWidth="1.6" fill="#1b263b" />
+            <text x="20" y="22.5" textAnchor="middle" fontFamily="Newsreader, serif" fontSize="13" fontWeight="600" fill="#D9B65B">EG</text>
+          </svg>
+        </div>
+
+        {/* Title */}
+        <h1 style={{
+          fontFamily: "'Newsreader', serif",
+          fontSize: "44px",
+          fontWeight: 600,
+          letterSpacing: "-0.01em",
+          color: "#ffffff",
+          margin: "0 0 8px 0"
+        }}>
+          EXAMGUARD AI
+        </h1>
+        
+        <p style={{
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: "12px",
+          color: "#D9B65B",
+          textTransform: "uppercase",
+          letterSpacing: "0.15em",
+          margin: "0 0 48px 0",
+          opacity: 0.9
+        }}>
+          Examination Integrity & Proctoring Suite
+        </p>
+
+        {/* Unified Cards Grid */}
+        <div style={{
+          display: "flex",
+          gap: "28px",
+          flexWrap: "wrap",
+          justifyContent: "center",
+          maxWidth: "840px",
+          width: "100%"
+        }}>
+          {/* Student Card */}
+          <div 
+            onClick={() => setPortalView("student")}
+            className="portal-card"
+            style={{
+              flex: "1 1 340px",
+              maxWidth: "380px",
+              background: "rgba(23, 31, 42, 0.6)",
+              border: "1px solid rgba(217, 182, 91, 0.25)",
+              borderRadius: "12px",
+              padding: "40px 32px",
+              textAlign: "left",
+              cursor: "pointer",
+              transition: "all 0.3s ease",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+              backdropFilter: "blur(8px)"
+            }}
+          >
+            <div style={{ fontSize: "36px", marginBottom: "16px" }}>🎓</div>
+            <h3 style={{
+              fontFamily: "'Newsreader', serif",
+              fontSize: "24px",
+              fontWeight: 600,
+              color: "#ffffff",
+              margin: "0 0 10px 0"
+            }}>
+              Student Portal
+            </h3>
+            <p style={{
+              fontSize: "13.5px",
+              lineHeight: "1.6",
+              color: "#a0aec0",
+              margin: "0 0 28px 0"
+            }}>
+              Access your schedule, verify your credentials, and start your monitored examination session securely.
+            </p>
+            <button style={{
+              background: "#D9B65B",
+              color: "#0d131f",
+              border: "none",
+              borderRadius: "6px",
+              padding: "12px 20px",
+              fontSize: "13px",
+              fontWeight: 600,
+              fontFamily: "'Inter', sans-serif",
+              cursor: "pointer",
+              width: "100%",
+              transition: "background 0.2s"
+            }}>
+              Enter Exam Hall →
+            </button>
+          </div>
+
+          {/* Invigilator Card */}
+          <div 
+            onClick={() => setPortalView("invigilator")}
+            className="portal-card"
+            style={{
+              flex: "1 1 340px",
+              maxWidth: "380px",
+              background: "rgba(23, 31, 42, 0.6)",
+              border: "1px solid rgba(110, 147, 190, 0.25)",
+              borderRadius: "12px",
+              padding: "40px 32px",
+              textAlign: "left",
+              cursor: "pointer",
+              transition: "all 0.3s ease",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+              backdropFilter: "blur(8px)"
+            }}
+          >
+            <div style={{ fontSize: "36px", marginBottom: "16px" }}>🛡️</div>
+            <h3 style={{
+              fontFamily: "'Newsreader', serif",
+              fontSize: "24px",
+              fontWeight: 600,
+              color: "#ffffff",
+              margin: "0 0 10px 0"
+            }}>
+              Invigilator Console
+            </h3>
+            <p style={{
+              fontSize: "13.5px",
+              lineHeight: "1.6",
+              color: "#a0aec0",
+              margin: "0 0 28px 0"
+            }}>
+              Supervise active sessions, review AI-flagged violations, manage cohorts, and inspect reports.
+            </p>
+            <button style={{
+              background: "#6E93BE",
+              color: "#0d131f",
+              border: "none",
+              borderRadius: "6px",
+              padding: "12px 20px",
+              fontSize: "13px",
+              fontWeight: 600,
+              fontFamily: "'Inter', sans-serif",
+              cursor: "pointer",
+              width: "100%",
+              transition: "background 0.2s"
+            }}>
+              Access Console →
+            </button>
+          </div>
+        </div>
+
+        {/* Global style injection for card animations */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @keyframes pulse {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-4px); }
+            100% { transform: translateY(0px); }
+          }
+          .portal-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 12px 40px rgba(217, 182, 91, 0.15) !important;
+            border-color: rgba(217, 182, 91, 0.5) !important;
+          }
+          .portal-card:last-child:hover {
+            box-shadow: 0 12px 40px rgba(110, 147, 190, 0.15) !important;
+            border-color: rgba(110, 147, 190, 0.5) !important;
+          }
+        `}} />
+      </div>
+    );
+  }
+
   if (!sessionStarted) {
     return (
       <div className="screen">
@@ -1022,6 +1219,27 @@ export default function App() {
           <div className="form-body">
             {!isLoggedIn ? (
               <>
+                <button 
+                  onClick={() => setPortalView("portal")} 
+                  style={{ 
+                    background: "transparent", 
+                    border: "none", 
+                    color: "#1E3A5F", 
+                    cursor: "pointer", 
+                    display: "flex", 
+                    alignItems: "center", 
+                    gap: 6, 
+                    fontSize: "10.5px", 
+                    fontFamily: "'IBM Plex Mono', monospace", 
+                    padding: 0, 
+                    marginBottom: "20px", 
+                    textTransform: "uppercase", 
+                    letterSpacing: "0.08em", 
+                    fontWeight: 600 
+                  }}
+                >
+                  ← Back to Portal Selection
+                </button>
                 <h1 style={{ fontFamily: "'Newsreader', serif", fontWeight: 600, fontSize: 38, lineHeight: 1.15, margin: '0 0 14px 0', letterSpacing: '-0.01em' }}>
                   Student&nbsp;Sign-In
                 </h1>

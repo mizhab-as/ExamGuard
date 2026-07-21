@@ -1,7 +1,68 @@
+
+function CustomSVGTimelineChart({ data }: { data: Array<{ elapsed_seconds: number; confidence: number; anomaly_type?: string }> }) {
+  if (!data || data.length === 0) return null;
+  const width = 800;
+  const height = 180;
+  const paddingLeft = 45;
+  const paddingRight = 20;
+  const paddingTop = 15;
+  const paddingBottom = 25;
+
+  const minX = Math.min(...data.map(d => d.elapsed_seconds));
+  const maxX = Math.max(...data.map(d => d.elapsed_seconds));
+  const rangeX = maxX - minX || 1;
+
+  const getX = (val: number) => paddingLeft + ((val - minX) / rangeX) * (width - paddingLeft - paddingRight);
+  const getY = (val: number) => {
+    const normalized = val > 1.0 ? val : val * 100;
+    return height - paddingBottom - (normalized / 100) * (height - paddingTop - paddingBottom);
+  };
+
+  const points = data.map(d => `${getX(d.elapsed_seconds)},${getY(d.confidence)}`);
+  const areaPathData = points.length > 0 ? `M ${getX(data[0].elapsed_seconds)},${height - paddingBottom} ` + points.map(p => `L ${p}`).join(" ") + ` L ${getX(data[data.length - 1].elapsed_seconds)},${height - paddingBottom} Z` : "";
+  const linePathData = points.length > 0 ? "M " + points.map(p => `L ${p}`).join(" ").substring(2) : "";
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "220px" }}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "100%" }}>
+        {[0, 25, 50, 75, 100].map(yVal => {
+          const y = getY(yVal);
+          return (
+            <g key={yVal}>
+              <line x1={paddingLeft} y1={y} x2={width - paddingRight} y2={y} stroke="var(--line)" strokeWidth="0.8" strokeDasharray="3 3" />
+              <text x={paddingLeft - 8} y={y + 3} textAnchor="end" fontSize="9" fill="var(--ink-soft)" fontFamily="monospace">{yVal}%</text>
+            </g>
+          );
+        })}
+        {(() => {
+          const step = Math.max(1, Math.ceil(data.length / 6));
+          return data.filter((_, idx) => idx % step === 0 || idx === data.length - 1).map((d, idx) => {
+            const x = getX(d.elapsed_seconds);
+            return (
+              <g key={idx}>
+                <line x1={x} y1={height - paddingBottom} x2={x} y2={height - paddingBottom + 4} stroke="var(--line)" strokeWidth="1" />
+                <text x={x} y={height - paddingBottom + 16} textAnchor="middle" fontSize="9" fill="var(--ink-soft)" fontFamily="monospace">{d.elapsed_seconds}s</text>
+              </g>
+            );
+          });
+        })()}
+        {areaPathData && <path d={areaPathData} fill="var(--seal)" fillOpacity="0.08" />}
+        {linePathData && <path d={linePathData} fill="none" stroke="var(--seal)" strokeWidth="1.8" />}
+        {data.map((d, idx) => {
+          const x = getX(d.elapsed_seconds);
+          const y = getY(d.confidence);
+          return (
+            <circle key={idx} cx={x} cy={y} r="4" fill="var(--seal)" stroke="var(--panel)" strokeWidth="1.5" />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 import React, { useState, useEffect } from "react";
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
-} from "recharts";
+import "./admin.css";
+
 
 const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
 const WS_BASE = (import.meta.env.VITE_WS_URL || API_BASE.replace(/^http/, "ws")).replace(/\/$/, "");
@@ -53,7 +114,7 @@ interface HistoricalReport {
   }>;
 }
 
-export default function App() {
+export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPortal: () => void }) {
   // Authentication Gate
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");
@@ -672,205 +733,207 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <div style={{ display: 'flex', minHeight: '100vh', fontFamily: "'Inter', sans-serif", color: '#1C2430', background: '#F6F3EC' }}>
-        {/* LEFT: ILLUSTRATION PANEL (46%) — matches invigilator-login.html */}
-        <div style={{
-          width: '46%',
-          background: '#152C48',
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden'
-        }}>
-          {/* Grid overlay */}
+      <div className="admin-dashboard-root">
+        <div style={{ display: 'flex', minHeight: '100vh', fontFamily: "'Inter', sans-serif", color: '#1C2430', background: '#F6F3EC' }}>
+          {/* LEFT: ILLUSTRATION PANEL (46%) — matches invigilator-login.html */}
           <div style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage: 'linear-gradient(rgba(246,243,236,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(246,243,236,0.035) 1px, transparent 1px)',
-            backgroundSize: '64px 64px'
-          }} />
-
-          {/* Large wax-seal SVG with ribbon tails */}
-          <svg width="360" height="360" viewBox="0 0 360 360" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'relative', zIndex: 1 }}>
-            <path d="M180 18 L198 42 L228 34 L232 65 L262 76 L248 104 L266 130 L238 143 L235 174 L204 168 L184 192 L164 168 L133 174 L130 143 L102 130 L120 104 L106 76 L136 65 L140 34 L170 42 Z"
-              stroke="#D9B65B" strokeWidth="1.6" fill="none" opacity="0.9"/>
-            <circle cx="180" cy="103" r="46" stroke="#D9B65B" strokeWidth="1.6" fill="none" opacity="0.9"/>
-            <text x="180" y="115" textAnchor="middle" fontFamily="Newsreader, serif" fontSize="34" fontWeight="600" fill="#D9B65B">EG</text>
-            {/* ribbon tails */}
-            <path d="M155 250 L146 340 L172 322 L188 340 L179 250" stroke="#C7D4E3" strokeWidth="1.4" fill="none" opacity="0.5"/>
-            <path d="M205 250 L214 340 L188 322" stroke="#C7D4E3" strokeWidth="1.4" fill="none" opacity="0.5"/>
-          </svg>
-
-          <div style={{
-            position: 'absolute',
-            left: 72,
-            bottom: 64,
-            maxWidth: 340,
-            color: '#C7D4E3',
-            fontSize: '13.5px',
-            lineHeight: 1.6
+            width: '46%',
+            background: '#152C48',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden'
           }}>
-            <strong style={{ display: 'block', fontFamily: "'Newsreader', serif", fontWeight: 600, fontSize: 19, color: '#F6F3EC', marginBottom: 8 }}>
-              Sealed integrity, verified by hand.
-            </strong>
-            Every confirmed violation carries your mark — a record the institution can stand behind.
-          </div>
-        </div>
+            {/* Grid overlay */}
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage: 'linear-gradient(rgba(246,243,236,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(246,243,236,0.035) 1px, transparent 1px)',
+              backgroundSize: '64px 64px'
+            }} />
 
-        {/* RIGHT: FORM PANEL (54%) — matches invigilator-login.html */}
-        <div style={{
-          width: '54%',
-          padding: '56px 80px',
-          display: 'flex',
-          flexDirection: 'column' as const,
-          background: '#F6F3EC'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 'auto' }}>
-            <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 26, height: 26, flexShrink: 0 }}>
-              <path d="M20 2 L23.5 6.5 L29 5 L29.5 10.7 L35 12.5 L32 17.5 L35 22.5 L29.5 24.3 L29 30 L23.5 28.5 L20 33 L16.5 28.5 L11 30 L10.5 24.3 L5 22.5 L8 17.5 L5 12.5 L10.5 10.7 L11 5 L16.5 6.5 Z"
-                stroke="#1E3A5F" strokeWidth="1.4" fill="#F6F3EC"/>
-              <text x="20" y="21.5" textAnchor="middle" fontFamily="Newsreader, serif" fontSize="10" fontWeight="600" fill="#1E3A5F">EG</text>
+            {/* Large wax-seal SVG with ribbon tails */}
+            <svg width="360" height="360" viewBox="0 0 360 360" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'relative', zIndex: 1 }}>
+              <path d="M180 18 L198 42 L228 34 L232 65 L262 76 L248 104 L266 130 L238 143 L235 174 L204 168 L184 192 L164 168 L133 174 L130 143 L102 130 L120 104 L106 76 L136 65 L140 34 L170 42 Z"
+                stroke="#D9B65B" strokeWidth="1.6" fill="none" opacity="0.9"/>
+              <circle cx="180" cy="103" r="46" stroke="#D9B65B" strokeWidth="1.6" fill="none" opacity="0.9"/>
+              <text x="180" y="115" textAnchor="middle" fontFamily="Newsreader, serif" fontSize="34" fontWeight="600" fill="#D9B65B">EG</text>
+              {/* ribbon tails */}
+              <path d="M155 250 L146 340 L172 322 L188 340 L179 250" stroke="#C7D4E3" strokeWidth="1.4" fill="none" opacity="0.5"/>
+              <path d="M205 250 L214 340 L188 322" stroke="#C7D4E3" strokeWidth="1.4" fill="none" opacity="0.5"/>
             </svg>
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, letterSpacing: '0.14em', color: '#5B6472', fontWeight: 500 }}>
-              EXAMGUARD AI
-            </span>
-          </div>
 
-          <div style={{ maxWidth: 420, marginTop: 96 }}>
-            <p style={{
-              fontFamily: "'IBM Plex Mono', monospace",
-              fontSize: '10.5px',
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase' as const,
-              color: '#B8912F',
-              margin: '0 0 14px 0'
+            <div style={{
+              position: 'absolute',
+              left: 72,
+              bottom: 64,
+              maxWidth: 340,
+              color: '#C7D4E3',
+              fontSize: '13.5px',
+              lineHeight: 1.6
             }}>
-              Administrator access
-            </p>
-            <h1 style={{
-              fontFamily: "'Newsreader', serif",
-              fontWeight: 600,
-              fontSize: 38,
-              lineHeight: 1.15,
-              margin: '0 0 14px 0',
-              letterSpacing: '-0.01em',
-              color: '#1C2430'
-            }}>
-              Invigilator sign-in
-            </h1>
-            <p style={{
-              fontSize: '14.5px',
-              lineHeight: 1.6,
-              color: '#5B6472',
-              margin: '0 0 40px 0',
-              maxWidth: '40ch'
-            }}>
-              Supervise active cohorts, review flagged sessions, and confirm violations for the academic record.
-            </p>
-
-            <form onSubmit={handleLogin}>
-              <div style={{ marginBottom: 26 }}>
-                <label htmlFor="admin-user" style={{
-                  display: 'block',
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: '10.5px',
-                  letterSpacing: '0.12em',
-                  color: '#5B6472',
-                  textTransform: 'uppercase' as const,
-                  marginBottom: 9
-                }}>
-                  Administrator username
-                </label>
-                <input
-                  id="admin-user"
-                  type="text"
-                  required
-                  placeholder="Username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  style={{
-                    width: '100%',
-                    border: 'none',
-                    borderBottom: '1px solid #CFC8B8',
-                    background: 'transparent',
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: '14.5px',
-                    color: '#1C2430',
-                    padding: '8px 2px 12px 2px',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-
-              <div style={{ marginBottom: 26 }}>
-                <label htmlFor="admin-pass" style={{
-                  display: 'block',
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: '10.5px',
-                  letterSpacing: '0.12em',
-                  color: '#5B6472',
-                  textTransform: 'uppercase' as const,
-                  marginBottom: 9
-                }}>
-                  Password
-                </label>
-                <input
-                  id="admin-pass"
-                  type="password"
-                  required
-                  placeholder="••••••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={{
-                    width: '100%',
-                    border: 'none',
-                    borderBottom: '1px solid #CFC8B8',
-                    background: 'transparent',
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: '14.5px',
-                    color: '#1C2430',
-                    padding: '8px 2px 12px 2px',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-
-              <button
-                type="submit"
-                style={{
-                  width: '100%',
-                  background: '#1E3A5F',
-                  color: '#F6F3EC',
-                  border: 'none',
-                  borderRadius: 8,
-                  padding: '15px 20px',
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  marginTop: 6
-                }}
-              >
-                Sign in
-              </button>
-            </form>
-
-            <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '12.5px', fontFamily: "'IBM Plex Mono', monospace" }}>
-              <span style={{ color: '#5B6472' }}>Are you a student? </span>
-              <a href="/" style={{ color: '#1E3A5F', fontWeight: 600, textDecoration: 'none', borderBottom: '1px solid #1E3A5F' }}>Go to Student Sign-In →</a>
+              <strong style={{ display: 'block', fontFamily: "'Newsreader', serif", fontWeight: 600, fontSize: 19, color: '#F6F3EC', marginBottom: 8 }}>
+                Sealed integrity, verified by hand.
+              </strong>
+              Every confirmed violation carries your mark — a record the institution can stand behind.
             </div>
           </div>
 
+          {/* RIGHT: FORM PANEL (54%) — matches invigilator-login.html */}
           <div style={{
-            marginTop: 'auto',
-            paddingTop: 48,
-            fontFamily: "'IBM Plex Mono', monospace",
-            fontSize: 10,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase' as const,
-            color: '#B4AD9C'
+            width: '54%',
+            padding: '56px 80px',
+            display: 'flex',
+            flexDirection: 'column' as const,
+            background: '#F6F3EC'
           }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 'auto' }}>
+              <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 26, height: 26, flexShrink: 0 }}>
+                <path d="M20 2 L23.5 6.5 L29 5 L29.5 10.7 L35 12.5 L32 17.5 L35 22.5 L29.5 24.3 L29 30 L23.5 28.5 L20 33 L16.5 28.5 L11 30 L10.5 24.3 L5 22.5 L8 17.5 L5 12.5 L10.5 10.7 L11 5 L16.5 6.5 Z"
+                  stroke="#1E3A5F" strokeWidth="1.4" fill="#F6F3EC"/>
+                <text x="20" y="21.5" textAnchor="middle" fontFamily="Newsreader, serif" fontSize="10" fontWeight="600" fill="#1E3A5F">EG</text>
+              </svg>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, letterSpacing: '0.14em', color: '#5B6472', fontWeight: 500 }}>
+                EXAMGUARD AI
+              </span>
+            </div>
+
+            <div style={{ maxWidth: 420, marginTop: 96 }}>
+              <p style={{
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: '10.5px',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase' as const,
+                color: '#B8912F',
+                margin: '0 0 14px 0'
+              }}>
+                Administrator access
+              </p>
+              <h1 style={{
+                fontFamily: "'Newsreader', serif",
+                fontWeight: 600,
+                fontSize: 38,
+                lineHeight: 1.15,
+                margin: '0 0 14px 0',
+                letterSpacing: '-0.01em',
+                color: '#1C2430'
+              }}>
+                Invigilator sign-in
+              </h1>
+              <p style={{
+                fontSize: '14.5px',
+                lineHeight: 1.6,
+                color: '#5B6472',
+                margin: '0 0 40px 0',
+                maxWidth: '40ch'
+              }}>
+                Supervise active cohorts, review flagged sessions, and confirm violations for the academic record.
+              </p>
+
+              <form onSubmit={handleLogin}>
+                <div style={{ marginBottom: 26 }}>
+                  <label htmlFor="admin-user" style={{
+                    display: 'block',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: '10.5px',
+                    letterSpacing: '0.12em',
+                    color: '#5B6472',
+                    textTransform: 'uppercase' as const,
+                    marginBottom: 9
+                  }}>
+                    Administrator username
+                  </label>
+                  <input
+                    id="admin-user"
+                    type="text"
+                    required
+                    placeholder="Username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    style={{
+                      width: '100%',
+                      border: 'none',
+                      borderBottom: '1px solid #CFC8B8',
+                      background: 'transparent',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: '14.5px',
+                      color: '#1C2430',
+                      padding: '8px 2px 12px 2px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: 26 }}>
+                  <label htmlFor="admin-pass" style={{
+                    display: 'block',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: '10.5px',
+                    letterSpacing: '0.12em',
+                    color: '#5B6472',
+                    textTransform: 'uppercase' as const,
+                    marginBottom: 9
+                  }}>
+                    Password
+                  </label>
+                  <input
+                    id="admin-pass"
+                    type="password"
+                    required
+                    placeholder="••••••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    style={{
+                      width: '100%',
+                      border: 'none',
+                      borderBottom: '1px solid #CFC8B8',
+                      background: 'transparent',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: '14.5px',
+                      color: '#1C2430',
+                      padding: '8px 2px 12px 2px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  style={{
+                    width: '100%',
+                    background: '#1E3A5F',
+                    color: '#F6F3EC',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '15px 20px',
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    marginTop: 6
+                  }}
+                >
+                  Sign in
+                </button>
+              </form>
+
+              <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '12.5px', fontFamily: "'IBM Plex Mono', monospace" }}>
+                <span style={{ color: '#5B6472' }}>Are you a student? </span>
+                <button type="button" onClick={onBackToPortal} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#1E3A5F", fontWeight: 600, textDecoration: "none", borderBottom: "1px solid #1E3A5F" }}>Go to Student Sign-In →</button>
+              </div>
+            </div>
+
+            <div style={{
+              marginTop: 'auto',
+              paddingTop: 48,
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: 10,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase' as const,
+              color: '#B4AD9C'
+            }}>
+            </div>
           </div>
         </div>
       </div>
@@ -878,7 +941,8 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--midnight)] flex flex-col font-sans text-[var(--ink)]">
+    <div className="admin-dashboard-root">
+      <div className="min-h-screen bg-[var(--midnight)] flex flex-col font-sans text-[var(--ink)]">
       {/* HEADER — matching invigilator-dashboard.html */}
       <header>
         <div className="brand">
@@ -917,7 +981,7 @@ export default function App() {
         </nav>
         <div className="header-right">
           <span className="role-tag">Authorized Invigilator</span>
-          <button onClick={() => setIsAuthenticated(false)} className="logout">
+          <button onClick={() => { setIsAuthenticated(false); onBackToPortal(); }} className="logout">
             Logout
           </button>
         </div>
@@ -2286,16 +2350,8 @@ export default function App() {
                         No incidents logged for this student.
                       </div>
                     ) : (
-                      <div style={{ height: '220px' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={sessionReport.timeline_chart} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
-                            <XAxis dataKey="elapsed_seconds" stroke="var(--ink-soft)" fontSize={9} tickFormatter={(val) => `${val}s`} />
-                            <YAxis stroke="var(--ink-soft)" fontSize={9} domain={[0, 100]} tickFormatter={(val) => `${val}%`} />
-                            <Tooltip contentStyle={{ backgroundColor: 'var(--panel)', border: '1px solid var(--line)', color: 'var(--ink)' }} />
-                            <Area type="monotone" dataKey="confidence" name="Incident Conf." stroke="var(--seal)" fill="var(--seal)" fillOpacity={0.08} />
-                          </AreaChart>
-                        </ResponsiveContainer>
+                      <div style={{ height: "220px" }}>
+                        <CustomSVGTimelineChart data={sessionReport.timeline_chart} />
                       </div>
                     )}
                   </div>
@@ -2569,6 +2625,7 @@ export default function App() {
         ExamGuard AI Invigilation Dashboard · Full Stack Integrity Control
       </footer>
     </div>
+  </div>
   );
 }
 
