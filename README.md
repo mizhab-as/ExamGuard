@@ -15,30 +15,36 @@
 
 ---
 
-## 📌 Table of Contents
+<p align="center">
+  <img src="assets/portal-selection.png" alt="ExamGuard Portal & Invigilator Suite" width="100%" />
+</p>
 
-- [Executive Overview](#-executive-overview)
-- [System Visual Tour & Screenshots](#-system-visual-tour--screenshots)
-  - [1. Authentication & Portal Gateway](#1-authentication--portal-gateway)
-  - [2. Student Exam Session & Live Telemetry](#2-student-exam-session--live-telemetry)
-  - [3. Edge AI Real-Time Integrity Warnings](#3-edge-ai-real-time-integrity-warnings)
-  - [4. Invigilator Live Command Center](#4-invigilator-live-command-center)
-  - [5. Exam Cohort & Question Bank Management](#5-exam-cohort--question-bank-management)
-  - [6. Session Reports & Proctoring Evidence Ledger](#6-session-reports--proctoring-evidence-ledger)
-- [Core Architecture & Technical Features](#-core-architecture--technical-features)
-  - [Edge-Side Computer Vision Engine](#-edge-side-computer-vision-engine)
-  - [Web Audio FFT Spectral Analyzer](#-web-audio-fft-spectral-analyzer)
-  - [Browser & System Integrity Enforcer](#-browser--system-integrity-enforcer)
-  - [Temporal Debouncing & Keyframe Snapshot Engine](#-temporal-debouncing--keyframe-snapshot-engine)
-  - [Bi-Directional WebSocket Multiplexing](#-bi-directional-websocket-multiplexing)
-- [System Architecture & Data Flow](#-system-architecture--data-flow)
-- [Technology Matrix](#-technology-matrix)
-- [REST API & WebSocket Specification](#-rest-api--websocket-specification)
-- [Database Schema & ERD](#-database-schema--erd)
-- [Local Installation & Setup Guide](#-local-installation--setup-guide)
-- [Production Deployment Guide](#-production-deployment-guide)
-- [Automated Testing](#-automated-testing)
-- [License & Authors](#-license--authors)
+<details>
+  <summary><b>📌 Table of Contents</b> <i>(Click to expand)</i></summary>
+  <br/>
+
+  - [🚀 Executive Overview](#-executive-overview)
+  - [📸 System Visual Tour & Screenshots](#-system-visual-tour--screenshots)
+    - [1. Authentication & Portal Gateway](#1-authentication--portal-gateway)
+    - [2. Student Exam Session & Live Telemetry](#2-student-exam-session--live-telemetry)
+    - [3. Edge AI Real-Time Integrity Warnings](#3-edge-ai-real-time-integrity-warnings)
+    - [4. Invigilator Live Command Center](#4-invigilator-live-command-center)
+    - [5. Exam Cohort & Question Bank Management](#5-exam-cohort--question-bank-management)
+    - [6. Session Reports & Proctoring Evidence Ledger](#6-session-reports--proctoring-evidence-ledger)
+  - [🔬 Core Architecture & Technical Features](#-core-architecture--technical-features)
+    - [🧠 Edge-Side Computer Vision Engine](#-edge-side-computer-vision-engine)
+    - [🎙️ Web Audio FFT Spectral Analyzer](#-web-audio-fft-spectral-analyzer)
+    - [💻 Browser & System Integrity Enforcer](#-browser--system-integrity-enforcer)
+    - [⏱️ Temporal Debouncing & Keyframe Snapshot Engine](#-temporal-debouncing--keyframe-snapshot-engine)
+    - [⚡ Bi-Directional WebSocket Multiplexing](#-bi-directional-websocket-multiplexing)
+  - [📐 System Architecture & Data Flow](#-system-architecture--data-flow)
+  - [🛠️ Technology Matrix](#-technology-matrix)
+  - [🔌 REST API & WebSocket Specification](#-rest-api--websocket-specification)
+  - [🗄️ Database Schema & ERD](#-database-schema--erd)
+  - [💻 Local Installation & Setup Guide](#-local-installation--setup-guide)
+  - [☁️ Production Deployment Guide](#-production-deployment-guide)
+  - [🧪 Automated Testing](#-automated-testing)
+</details>
 
 ---
 
@@ -174,7 +180,7 @@ graph TD
         FM --> Pose[Head Pose: Yaw & Pitch Estimation]
         FM --> Gaze[Pupil / Iris Gaze Tracking]
         
-        Pose --> Debounce{Temporal Debouncing Window<br/>Visual: 3.0s | Audio: 2.0s}
+        Pose --> Debounce{"Temporal Debouncing Window<br/>Visual: 3.0s & Audio: 2.0s"}
         Gaze --> Debounce
         FFT --> Debounce
         

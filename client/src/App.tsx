@@ -59,19 +59,27 @@ const CLASS_LABELS: Record<number, string> = {
 };
 
 export default function App() {
-  const [portalView, setPortalView] = useState<"portal" | "student" | "invigilator">("portal");
-  const [studentId, setStudentId] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem("examguard_student_logged_in") === "true");
+  const [portalView, setPortalView] = useState<"portal" | "student" | "invigilator">(() => {
+    const isStudentLoggedIn = localStorage.getItem("examguard_student_logged_in") === "true";
+    const isAdminAuth = localStorage.getItem("examguard_admin_auth") === "true";
+    const saved = localStorage.getItem("examguard_portal_view");
+
+    if (isAdminAuth && saved === "invigilator") return "invigilator";
+    if (isStudentLoggedIn || saved === "student") return "student";
+    return "portal";
+  });
+  const [studentId, setStudentId] = useState(() => localStorage.getItem("examguard_student_id") || "");
   const [passcode, setPasscode] = useState("");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [studentName, setStudentName] = useState("");
+  const [studentName, setStudentName] = useState(() => localStorage.getItem("examguard_student_name") || "");
   const [authenticating, setAuthenticating] = useState(false);
-  const [selectedExamId, setSelectedExamId] = useState("default");
+  const [selectedExamId, setSelectedExamId] = useState(() => localStorage.getItem("examguard_selected_exam_id") || "default");
   const [examsList, setExamsList] = useState<Array<{ id: string; title: string; description?: string }>>([
     { id: "default", title: "Default Proctoring Exam" }
   ]);
   const [loginError, setLoginError] = useState("");
-  const [sessionStarted, setSessionStarted] = useState(false);
-  const [sessionId, setSessionId] = useState("");
+  const [sessionStarted, setSessionStarted] = useState(() => localStorage.getItem("examguard_session_started") === "true");
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem("examguard_session_id") || "");
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
   const [timeLeft, setTimeLeft] = useState(2700); // 45 minutes in seconds
@@ -140,6 +148,30 @@ export default function App() {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
 
+  // Synchronize state changes to localStorage
+  useEffect(() => {
+    if (portalView) {
+      localStorage.setItem("examguard_portal_view", portalView);
+    }
+  }, [portalView]);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      localStorage.setItem("examguard_student_logged_in", "true");
+      if (studentId) localStorage.setItem("examguard_student_id", studentId);
+      if (studentName) localStorage.setItem("examguard_student_name", studentName);
+      if (selectedExamId) localStorage.setItem("examguard_selected_exam_id", selectedExamId);
+      localStorage.setItem("examguard_portal_view", "student");
+    }
+  }, [isLoggedIn, studentId, studentName, selectedExamId]);
+
+  useEffect(() => {
+    if (sessionStarted && sessionId) {
+      localStorage.setItem("examguard_session_started", "true");
+      localStorage.setItem("examguard_session_id", sessionId);
+    }
+  }, [sessionStarted, sessionId]);
+
   useEffect(() => {
     const fetchExams = async () => {
       try {
@@ -148,7 +180,10 @@ export default function App() {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
             setExamsList(data);
-            setSelectedExamId(data[0].id);
+            const savedExamId = localStorage.getItem("examguard_selected_exam_id");
+            if (!savedExamId || !data.some((e: any) => e.id === savedExamId)) {
+              setSelectedExamId(data[0].id);
+            }
           }
         }
       } catch (err) {

@@ -116,7 +116,9 @@ interface HistoricalReport {
 
 export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPortal: () => void }) {
   // Authentication Gate
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem("examguard_admin_auth") === "true";
+  });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
@@ -182,6 +184,7 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (username === "admin" && password === "admin123") {
+      localStorage.setItem("examguard_admin_auth", "true");
       setIsAuthenticated(true);
     } else {
       alert("Invalid credentials. Try username: admin, password: admin123");
@@ -981,7 +984,12 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
         </nav>
         <div className="header-right">
           <span className="role-tag">Authorized Invigilator</span>
-          <button onClick={() => { setIsAuthenticated(false); onBackToPortal(); }} className="logout">
+          <button onClick={() => {
+            localStorage.removeItem("examguard_admin_auth");
+            localStorage.setItem("examguard_portal_view", "portal");
+            setIsAuthenticated(false);
+            onBackToPortal();
+          }} className="logout">
             Logout
           </button>
         </div>
