@@ -99,6 +99,7 @@ export default function App() {
   
   // MediaPipe Face Mesh ref
   const faceMeshRef = useRef<any>(null);
+  const [faceMeshReady, setFaceMeshReady] = useState(false);
 
   // Web Audio refs
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -157,44 +158,84 @@ export default function App() {
     fetchExams();
   }, []);
 
+  // Self-healing MediaPipe FaceMesh initializer (with script loading retry loop)
+  const initFaceMesh = async (): Promise<any> => {
+    if (faceMeshRef.current) return faceMeshRef.current;
+
+    // Poll up to 25 times (5 seconds max) for window.FaceMesh script from CDN
+    let attempts = 0;
+    while (!(window as any).FaceMesh && attempts < 25) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      attempts++;
+    }
+
+    const FaceMesh = (window as any).FaceMesh;
+    if (!FaceMesh) {
+      console.warn("[MediaPipe] FaceMesh script CDN is not ready after polling.");
+      return null;
+    }
+
+    try {
+      console.log("[MediaPipe] Initializing FaceMesh engine...");
+      const faceMesh = new FaceMesh({
+        locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+      });
+
+      faceMesh.setOptions({
+        maxNumFaces: 4,
+        refineLandmarks: true, // required for iris tracking
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+
+      faceMesh.onResults(onFaceMeshResults);
+      faceMeshRef.current = faceMesh;
+      setFaceMeshReady(true);
+      console.log("[MediaPipe] FaceMesh configuration completed successfully.");
+      return faceMesh;
+    } catch (err: any) {
+      console.error("[MediaPipe] Primary FaceMesh init failed, attempting fallback without iris refinement:", err);
+      try {
+        const fallbackMesh = new FaceMesh({
+          locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+        fallbackMesh.setOptions({
+          maxNumFaces: 4,
+          refineLandmarks: false,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        fallbackMesh.onResults(onFaceMeshResults);
+        faceMeshRef.current = fallbackMesh;
+        setFaceMeshReady(true);
+        console.log("[MediaPipe] Fallback FaceMesh initialized.");
+        return fallbackMesh;
+      } catch (fallbackErr) {
+        console.error("[MediaPipe] Fallback FaceMesh initialization failed:", fallbackErr);
+        return null;
+      }
+    }
+  };
+
   // Load ONNX Model and Setup MediaPipe on start
   const initializeEngines = async () => {
+    setModelLoading(true);
+    setModelError(null);
+
+    // 1. Initialize ONNX (decoupled from MediaPipe)
     try {
-      setModelLoading(true);
-      setModelError(null);
       console.log("[ort] Loading model.onnx...");
       const session = await ort.InferenceSession.create("/model.onnx?v=2");
       ortSessionRef.current = session;
       setModelReady(true);
       console.log("[ort] Model loaded successfully.");
-
-      // Setup MediaPipe Face Mesh from window object (CDN)
-      const FaceMesh = (window as any).FaceMesh;
-      if (FaceMesh) {
-        console.log("[MediaPipe] Initializing FaceMesh...");
-        const faceMesh = new FaceMesh({
-          locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-        });
-
-        faceMesh.setOptions({
-          maxNumFaces: 4,
-          refineLandmarks: true, // required for iris tracking
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
-
-        faceMesh.onResults(onFaceMeshResults);
-        faceMeshRef.current = faceMesh;
-        console.log("[MediaPipe] FaceMesh configuration completed.");
-      } else {
-        console.warn("[MediaPipe] FaceMesh script is not loaded from CDN.");
-      }
     } catch (err: any) {
-      console.error("[ort/MediaPipe] Engine initialization failed:", err);
-      setModelError(err?.message || "Failed to load detection engine");
-    } finally {
-      setModelLoading(false);
+      console.warn("[ort] ONNX model load warning (will fallback to FaceMesh/audio sensors):", err);
     }
+
+    // 2. Initialize MediaPipe FaceMesh
+    await initFaceMesh();
+    setModelLoading(false);
   };
 
   useEffect(() => {
@@ -333,16 +374,19 @@ export default function App() {
   const onFaceMeshResults = useCallback(async (results: any) => {
     const isStarted = sessionStartedRef.current;
     const socket = wsRef.current;
-    if (!isStarted || !socket || socket.readyState !== WebSocket.OPEN) return;
+    const faceCount = results.multiFaceLandmarks ? results.multiFaceLandmarks.length : 0;
+
+    setProctorDebug((prev) => ({
+      ...prev,
+      faces: faceCount,
+      wsState: socket ? (socket.readyState === 1 ? "OPEN" : socket.readyState === 0 ? "CONNECTING" : "CLOSED") : "CLOSED"
+    }));
+
+    if (!isStarted) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
 
     // A. Validate Face Visibility with Debouncing
     if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
-      setProctorDebug((prev) => ({
-        ...prev,
-        faces: 0,
-        wsState: socket.readyState === 1 ? "OPEN" : socket.readyState === 0 ? "CONNECTING" : "CLOSED"
-      }));
-
       consecutiveMissingRef.current += 1;
       if (consecutiveMissingRef.current >= 3) { // 3 consecutive frames (~1s)
         console.warn("[PROCTOR] Face not visible — student left seat or camera blocked!");
@@ -769,14 +813,23 @@ export default function App() {
 
   // Client-side video frame capture
   const captureAndEvaluate = useCallback(async () => {
-    if (!webcamRef.current || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!webcamRef.current) return;
 
     const video = webcamRef.current.video;
-    if (video && video.readyState === 4 && faceMeshRef.current) {
-      // Send video element to MediaPipe Face Mesh. Results will trigger onFaceMeshResults.
-      await faceMeshRef.current.send({ image: video });
+    if (video && video.readyState === 4) {
+      let faceMesh = faceMeshRef.current;
+      if (!faceMesh) {
+        faceMesh = await initFaceMesh();
+      }
+      if (faceMesh) {
+        try {
+          await faceMesh.send({ image: video });
+        } catch (err) {
+          console.error("[MediaPipe] Frame evaluation error:", err);
+        }
+      }
     }
-  }, [ws]);
+  }, []);
 
   // Client-side audio check with debouncing
   const analyzeAudio = useCallback(() => {
@@ -898,10 +951,12 @@ export default function App() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden" && ws && ws.readyState === WebSocket.OPEN) {
+        const screenshot = webcamRef.current?.getScreenshot() || null;
         ws.send(
           JSON.stringify({
             type: "visibility_change",
-            visible: false
+            visible: false,
+            frame: screenshot
           })
         );
         setWarnings((prev) => [
@@ -1497,7 +1552,7 @@ export default function App() {
                       <span>Face tracking</span>
                       {modelLoading ? (
                         <span className="status" style={{ color: '#B8912F' }}>Loading…</span>
-                      ) : faceMeshRef.current ? (
+                      ) : faceMeshRef.current || faceMeshReady ? (
                         <span className="status ready">Connected</span>
                       ) : (
                         <span className="status offline">Disconnected</span>

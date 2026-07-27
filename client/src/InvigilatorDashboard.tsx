@@ -1330,7 +1330,7 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
                       value={newExam.id}
                       onChange={(e) => setNewExam((prev) => ({ ...prev, id: e.target.value }))}
                       style={{
-                        width: '100%', background: 'var(--midnight)', border: '1px solid var(--line)',
+                        width: '100%', boxSizing: 'border-box', background: 'var(--midnight)', border: '1px solid var(--line)',
                         color: 'var(--ink)', fontFamily: "'Inter', sans-serif", fontSize: '13px',
                         padding: '10px 14px', borderRadius: '6px', outline: 'none'
                       }}
@@ -1345,7 +1345,7 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
                       value={newExam.title}
                       onChange={(e) => setNewExam((prev) => ({ ...prev, title: e.target.value }))}
                       style={{
-                        width: '100%', background: 'var(--midnight)', border: '1px solid var(--line)',
+                        width: '100%', boxSizing: 'border-box', background: 'var(--midnight)', border: '1px solid var(--line)',
                         color: 'var(--ink)', fontFamily: "'Inter', sans-serif", fontSize: '13px',
                         padding: '10px 14px', borderRadius: '6px', outline: 'none'
                       }}
@@ -1359,7 +1359,7 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
                       value={newExam.description}
                       onChange={(e) => setNewExam((prev) => ({ ...prev, description: e.target.value }))}
                       style={{
-                        width: '100%', background: 'var(--midnight)', border: '1px solid var(--line)',
+                        width: '100%', boxSizing: 'border-box', background: 'var(--midnight)', border: '1px solid var(--line)',
                         color: 'var(--ink)', fontFamily: "'Inter', sans-serif", fontSize: '13px',
                         padding: '10px 14px', borderRadius: '6px', outline: 'none'
                       }}
@@ -1747,8 +1747,8 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
                   <h3 style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '10.5px', textTransform: 'uppercase', color: 'var(--ink-soft)', marginBottom: '18px', letterSpacing: '0.1em' }}>
                     Add a new question to {examsList.find(e => e.id === selectedExamId)?.title || selectedExamId}
                   </h3>
-                  <form onSubmit={submitQuestion} style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '680px' }}>
-                    <div>
+                  <form onSubmit={submitQuestion} style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                    <div style={{ width: '100%', boxSizing: 'border-box' }}>
                       <label style={{ display: 'block', fontFamily: "'IBM Plex Mono', monospace", fontSize: '9px', textTransform: 'uppercase', color: 'var(--gold)', letterSpacing: '0.12em', marginBottom: 6 }}>Question text</label>
                       <textarea
                         required
@@ -1757,14 +1757,14 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
                         onChange={(e) => setNewQuestion((prev) => ({ ...prev, text: e.target.value }))}
                         placeholder="Enter the full question text…"
                         style={{
-                          width: '100%', background: 'var(--midnight)', border: '1px solid var(--line)',
+                          width: '100%', boxSizing: 'border-box', background: 'var(--midnight)', border: '1px solid var(--line)',
                           color: 'var(--ink)', fontFamily: "'Inter', sans-serif", fontSize: '13px',
                           padding: '10px 14px', borderRadius: '6px', outline: 'none', resize: 'vertical'
                         }}
                       />
                     </div>
                     {newQuestion.options.map((opt, i) => (
-                      <div key={i}>
+                      <div key={i} style={{ width: '100%', boxSizing: 'border-box' }}>
                         <label style={{ display: 'block', fontFamily: "'IBM Plex Mono', monospace", fontSize: '9px', textTransform: 'uppercase', color: 'var(--ink-soft)', letterSpacing: '0.1em', marginBottom: 6 }}>Option {String.fromCharCode(65 + i)}</label>
                         <input
                           type="text"
@@ -1777,7 +1777,7 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
                           }}
                           placeholder={`Option ${String.fromCharCode(65 + i)}…`}
                           style={{
-                            width: '100%', background: 'var(--midnight)', border: '1px solid var(--line)',
+                            width: '100%', boxSizing: 'border-box', background: 'var(--midnight)', border: '1px solid var(--line)',
                             color: 'var(--ink)', fontFamily: "'Inter', sans-serif", fontSize: '13px',
                             padding: '10px 14px', borderRadius: '6px', outline: 'none'
                           }}
@@ -1785,13 +1785,13 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
                       </div>
                     ))}
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', boxSizing: 'border-box' }}>
                       <label style={{ display: 'block', fontFamily: "'IBM Plex Mono', monospace", fontSize: '9px', textTransform: 'uppercase', color: 'var(--verdigris)', letterSpacing: '0.1em' }}>Correct Answer Option</label>
                       <select
                         value={newQuestion.correct_option_idx}
                         onChange={(e) => setNewQuestion((prev) => ({ ...prev, correct_option_idx: parseInt(e.target.value) }))}
                         style={{
-                          background: 'var(--midnight)', border: '1px solid var(--line)',
+                          width: '100%', boxSizing: 'border-box', background: 'var(--midnight)', border: '1px solid var(--line)',
                           color: 'var(--ink)', fontFamily: "'Inter', sans-serif", fontSize: '13px',
                           padding: '10px 14px', borderRadius: '6px', outline: 'none', cursor: 'pointer'
                         }}
@@ -2490,26 +2490,36 @@ export default function InvigilatorDashboard({ onBackToPortal }: { onBackToPorta
             {/* Modal Body */}
             <div style={{ padding: '24px', display: 'flex', gap: '24px', flexDirection: 'column' }}>
               <div style={{ width: '100%' }}>
-                {selectedAlert.video_clip_path ? (
-                  <div style={{ border: '1px solid var(--line)', borderRadius: '4px', overflow: 'hidden', backgroundColor: '#000', aspectRatio: '16/9', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    <video
-                      src={`${API_BASE}${selectedAlert.video_clip_path}`}
-                      controls
-                      autoPlay
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', outline: 'none' }}
-                    />
-                  </div>
-                ) : selectedAlert.frame_path ? (
-                  <div style={{ border: '1px solid var(--line)', borderRadius: '4px', overflow: 'hidden', backgroundColor: '#000', aspectRatio: '16/9' }}>
+                {selectedAlert.frame_path ? (
+                  <div style={{ border: '1px solid var(--line)', borderRadius: '4px', overflow: 'hidden', backgroundColor: '#000', aspectRatio: '16/9', position: 'relative' }}>
                     <img
                       src={`${API_BASE}${selectedAlert.frame_path}`}
-                      alt="Evidence Frame"
+                      alt="Evidence Keyframe Snapshot"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      onError={(e) => {
+                        if (selectedAlert.thumbnail_path) {
+                          (e.target as HTMLImageElement).src = `${API_BASE}${selectedAlert.thumbnail_path}`;
+                        }
+                      }}
+                    />
+                  </div>
+                ) : selectedAlert.thumbnail_path ? (
+                  <div style={{ border: '1px solid var(--line)', borderRadius: '4px', overflow: 'hidden', backgroundColor: '#000', aspectRatio: '16/9' }}>
+                    <img
+                      src={`${API_BASE}${selectedAlert.thumbnail_path}`}
+                      alt="Evidence Thumbnail"
                       style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                     />
                   </div>
                 ) : (
-                  <div style={{ border: '1px solid var(--line)', borderRadius: '4px', backgroundColor: 'var(--midnight)', aspectRatio: '16/9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)', fontStyle: 'italic', fontSize: '12px', fontFamily: "'IBM Plex Mono', monospace" }}>
-                    No visual keyframe recorded.
+                  <div style={{ border: '1px solid var(--line)', borderRadius: '4px', backgroundColor: 'var(--midnight)', aspectRatio: '16/9', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)', gap: '8px', padding: '24px' }}>
+                    <span style={{ fontSize: '28px' }}>📸</span>
+                    <span style={{ fontSize: '13px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--ink)', fontWeight: 600 }}>
+                      Keyframe Snapshot Logged
+                    </span>
+                    <span style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--ink-soft)' }}>
+                      Incident ID #{selectedAlert.id} · {selectedAlert.anomaly_type}
+                    </span>
                   </div>
                 )}
               </div>

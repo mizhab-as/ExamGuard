@@ -692,13 +692,33 @@ async def student_stream(websocket: WebSocket, session_id: str, db: Session = De
             elif msg_type == "visibility_change":
                 visible = data.get("visible", True)
                 if not visible:
+                    frame_path_web = None
+                    thumb_path_web = None
+                    b64_frame = data.get("frame")
+                    if b64_frame:
+                        try:
+                            img = decode_base64_image(b64_frame)
+                            if img is not None:
+                                alert_id = str(uuid.uuid4())
+                                frame_filename = f"{session_id}_{alert_id}.jpg"
+                                thumb_filename = f"{session_id}_{alert_id}_thumb.jpg"
+                                frame_path_abs = os.path.join(FRAMES_DIR, frame_filename)
+                                thumb_path_abs = os.path.join(THUMBNAILS_DIR, thumb_filename)
+                                import cv2
+                                cv2.imwrite(frame_path_abs, img)
+                                cv2.imwrite(thumb_path_abs, create_thumbnail(img))
+                                frame_path_web = f"/static/frames/{frame_filename}"
+                                thumb_path_web = f"/static/thumbnails/{thumb_filename}"
+                        except Exception as img_err:
+                            print(f"[ERROR] Failed to save visibility anomaly image: {img_err}")
+
                     # Tab switched, log as critical alert
                     new_alert = SessionAlert(
                         session_id=session_id,
                         anomaly_type="Interface Violation (Tab Switch)",
                         confidence=1.0,
-                        frame_path=None,
-                        thumbnail_path=None,
+                        frame_path=frame_path_web,
+                        thumbnail_path=thumb_path_web,
                         timestamp=datetime.utcnow()
                     )
                     db.add(new_alert)
@@ -712,8 +732,8 @@ async def student_stream(websocket: WebSocket, session_id: str, db: Session = De
                         "anomaly_type": "Interface Violation (Tab Switch)",
                         "confidence": 100.0,
                         "timestamp": new_alert.timestamp.isoformat(),
-                        "thumbnail_path": None,
-                        "frame_path": None,
+                        "thumbnail_path": new_alert.thumbnail_path,
+                        "frame_path": new_alert.frame_path,
                         "override_status": new_alert.override_status
                     }
                     await manager.broadcast_to_dashboards(alert_payload)

@@ -41,7 +41,8 @@ body {
 }
 
 /* ---------- EXAM HEADER / MAIN LAYOUT (100vh no-scroll) ---------- */
-header {
+body:not(.admin-dashboard-root) header:not(.admin-dashboard-root header),
+.screen:not(.admin-dashboard-root) header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -64,7 +65,7 @@ header .brand svg {
   gap: 12px;
 }
 
-main {
+body:not(.admin-dashboard-root) main {
   display: grid;
   grid-template-columns: 1fr 260px;
   gap: 20px;
