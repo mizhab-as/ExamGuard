@@ -235,6 +235,29 @@ Maintains persistent WebSocket connections between client dashboards and the ser
 ### 6. Institutional PDF Export via CSS Print Styles
 Rather than requiring complex libraries like PDFKit, the dashboard uses custom CSS print styles. When `window.print()` is triggered, all dashboard headers, buttons, and backgrounds are hidden, compiling the student logs, timeline, and keyframe snapshots into a formal paper layout.
 
+## 6.2 User Interface Screenshots
+
+### Invigilator Live Monitor & Multi-Student Live Feed
+The invigilator command center allows proctors to monitor candidate streams and track real-time alert logs simultaneously across active exam cohorts:
+
+| Live Monitor Dashboard | Multi-Student Live Feed |
+| :---: | :---: |
+| ![Live Monitor Dashboard](assets/live-monitor-dashboard.png) | ![Multi-Student Live Feed](assets/multi-student-live-feed.png) |
+
+### Student Exam Interface & Real-Time Integrity Warnings
+The student interface features a live telemetry HUD and instant multi-modal warnings when anomalies persist beyond temporal debouncing thresholds:
+
+| Student Exam Interface | Head Yaw Warning | Multi-Person Warning |
+| :---: | :---: | :---: |
+| ![Student Exam Interface](assets/student-exam-interface.png) | ![Head Yaw Warning](assets/warning-head-yaw.png) | ![Multiple Persons Warning](assets/warning-multiple-persons.png) |
+
+### Proctoring Evidence Ledger & Audit Reports
+Comprehensive session statistics, incident timeline graphs, and candidate scorecards are compiled into an audit-ready ledger:
+
+| Proctoring Ledger & Timeline Graph | Automated Student Scorecard |
+| :---: | :---: |
+| ![Proctoring Ledger Reports](assets/proctoring-ledger-reports.png) | ![Student Scorecard](assets/student-scorecard.png) |
+
 ---
 
 # CHAPTER 7: RESULTS AND DISCUSSION
